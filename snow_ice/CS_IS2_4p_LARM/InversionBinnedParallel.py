@@ -10,6 +10,8 @@ from itertools import chain
 import pickle
 import os
 import warnings
+from datetime import datetime
+import netCDF4 as nc
 
 
 
@@ -39,6 +41,29 @@ def mask_observations(observations, inversion):
                 new_inversion[i][j] = np.nan
     return new_inversion
 
+def compute_rho_i(date):
+    reference_date = datetime(2010, 1, 1)
+    date_format = "%Y%m%d"
+    date_obj = datetime.strptime(date, date_format)
+    difference = date_obj - reference_date
+    nombre_de_jours = difference.days
+    
+    ice_type = nc.Dataset('/home/erb/masterproject/MSCI_project/snow_ice/carmen/icetype/icetype.nc').variables['Ice Type'][nombre_de_jours]
+
+    rho_MYI = 916.0
+    rho_FYI = 882.0
+
+    density_map = np.copy(ice_type)
+
+    for i in range(len(ice_type)):
+        for j in range(len(ice_type[0])):
+            if ice_type[i][j] == 3.0:
+                density_map[i][j] = rho_MYI
+            elif ice_type[i][j] == 2.0:
+                density_map[i][j] = rho_FYI
+    return density_map
+
+
 '''
 FROM DAILY DATA: 
 fb_path1 = "../carmen/daily_numpys/AK_CPOM/FB_interp_2016-2017_25km_20170309.npy"
@@ -49,7 +74,7 @@ fb_path2 = "../carmen/daily_numpys/CS2_CPOM/FB_interp_2016-2017_25km_20170309.np
 date     = ["20190414", "20190415", "20190416", "20190414", "20190415", "20190416", "20190417", "20190418", "20190419",
             "20190420", "20190421", "20190422", "20190423", "20190424", "20190425"]
 month    = 7 #Number of month since October (ex : 3 for January)
-fb_path1 = "/home/erb/masterproject/MSCI_project/snow_ice/carmen/non_interpolated_data/freeboard_daily_processed/IS2/dailyFB_25km_2018-2019_season.pkl"
+fb_path1 = "/home/erb/masterproject/MSCI_project/snow_ice/carmen/non_interpolated_data/IS2_ATLv6/IS2/dailyFB_25km_2018-2019_season.pkl"
 fb_path2 = "/home/erb/masterproject/MSCI_project/snow_ice/carmen/non_interpolated_data/freeboard_daily_processed/CS2_LARM/dailyFB_25km_2018-2019_season.pkl"
 verbose=False
 minlat = -5000000.0/1000000 
@@ -57,7 +82,7 @@ maxlat = 5000000.0/1000000
 minlon = -5000000.0/1000000
 maxlon = 5000000.0/1000000
 parametrization = 1
-initial_cells = 1300
+initial_cells = 1500
 iterations_number = 1500000
 verbosity = 5000
 independent_chains = 4
@@ -122,37 +147,39 @@ def main(month,
     grid_y = np.load("/home/erb/masterproject/MSCI_project/new_y_25km.npy")
 
 
-    is2_error = np.load('/home/erb/masterproject/MSCI_project/snow_ice/CS_IS2_4p_LARM/error_map/2018-2019/IS2_Period_15j.npy')
-    cs2_error = np.load('/home/erb/masterproject/MSCI_project/snow_ice/CS_IS2_4p_LARM/error_map/2018-2019/CS2_Period_15j.npy')
+    is2_std = np.load('/home/erb/masterproject/MSCI_project/snow_ice/CS_IS2_4p_LARM/error_map/2018-2019/IS2_Period_15j.npy')
+    cs2_std = np.load('/home/erb/masterproject/MSCI_project/snow_ice/CS_IS2_4p_LARM/error_map/2018-2019/CS2_Period_15j.npy')
 
-    default_error = 0.01
+
+    density_map = compute_rho_i(date[7])
 
 
     is2_observations = []
     cs2_observations = []
 
-    for k in range(len(is2)):
+    for k in range(len(date)):
         for i in range (360):
             for j in range (360):
-                if not np.isnan(is2[k][i][j]):
-                    if is2_error[i][j] > 0:
-                        is2_observations.append([grid_x[i][j]/1000000, grid_y[i][j]/1000000, 1, is2[k][i][j], is2_error[i][j], month])
-                    else :
-                        is2_observations.append([grid_x[i][j]/1000000, grid_y[i][j]/1000000, 1, is2[k][i][j], default_error, month])
-                if not np.isnan(cs2[k][i][j]):
-                    if cs2_error[i][j] > 0:
-                        cs2_observations.append([grid_x[i][j]/1000000, grid_y[i][j]/1000000, 0, cs2[k][i][j], cs2_error[i][j], month])
+                if not np.isnan(is2[k][i][j]) and not np.isnan(density_map[i][j]):
+                    if is2_std[i][j] > 0:
+                        is2_observations.append([grid_x[i][j]/1000000, grid_y[i][j]/1000000, 1, is2[k][i][j], is2_std[i][j], month, density_map[i][j]])
                     else : 
-                        cs2_observations.append([grid_x[i][j]/1000000, grid_y[i][j]/1000000, 0, cs2[k][i][j], default_error, month])
+                        is2_observations.append([grid_x[i][j]/1000000, grid_y[i][j]/1000000, 1, is2[k][i][j], 0.01, month, density_map[i][j]])
+
+                if not np.isnan(cs2[k][i][j])and not np.isnan(density_map[i][j]):
+                    if cs2_std[i][j] > 0:
+                        cs2_observations.append([grid_x[i][j]/1000000, grid_y[i][j]/1000000, 0, cs2[k][i][j], cs2_std[i][j], month, density_map[i][j]])
+                    else :                         
+                        cs2_observations.append([grid_x[i][j]/1000000, grid_y[i][j]/1000000, 0, cs2[k][i][j], 0.01, month, density_map[i][j]])
 
 
 
     cs2_observations.extend(is2_observations)
-    data = pd.DataFrame(cs2_observations, columns=["Longitude", "Latitude", "Type", "Value", "StdDev", "Month"])
+    data = pd.DataFrame(cs2_observations, columns=["Longitude", "Latitude", "Type", "Value", "StdDev", "Month", "Rho_i"])
     
     observations_matrix_subset = data.values
 
-    np.savetxt("observations.txt", observations_matrix_subset, '%5.1f %5.1f %d %5.5f %5.5f %d')
+    np.savetxt("observations.txt", observations_matrix_subset, '%5.1f %5.1f %d %5.5f %5.5f %d %d')
 
     # Add the total number of observations at the top of the file
     with open('observations.txt', 'r') as original: data = original.read()
@@ -203,10 +230,10 @@ def main(month,
     parameter_W = 360
     parameter_H = 360
 
-    file_snow = f"images/" + date[1] + ".npy" +"_snow"
-    file_ice = f"images/" + date[1] + ".npy" + "_ice"
-    file_cs2_penetration = f"images/" + date[1] + ".npy" + "cs2_penetration"
-    file_is2_penetration = f"images/" + date[1] + ".npy" + "is2_penetration"
+    file_snow = f"images/" + date[7] + ".npy" +"_snow"
+    file_ice = f"images/" + date[7] + ".npy" + "_ice"
+    file_cs2_penetration = f"images/" + date[7] + ".npy" + "cs2_penetration"
+    file_is2_penetration = f"images/" + date[7] + ".npy" + "is2_penetration"
 
 
     subprocess.run([
