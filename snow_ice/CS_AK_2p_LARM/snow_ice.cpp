@@ -14,7 +14,7 @@ typedef enum {
 sealand_model_t;
 
 const float DENSITY_WATER = 1023.0;
-const float DENSITY_ICE = 917.0;
+//const float DENSITY_ICE = 917.0;
 //const float DENSITY_SNOW = 300.0;
 const float SPEED_OF_LIGHT_VACUUM_OVER_SPEED_OF_LIGHT_SNOW = 1.28;
 
@@ -33,6 +33,7 @@ struct observation {
     double sigma;
     double logsigma;
     int month;
+    int DENSITY_ICE;
 };
 
 static std::vector < struct observation > obs;
@@ -92,13 +93,14 @@ int gvcart_loaddata_(int * filename_len,
 
     obs.resize(nobs);
     for (int i = 0; i < nobs; i++) {
-        if (fscanf(fp, "%lf %lf %d %lf %lf %d\n",
+        if (fscanf(fp, "%lf %lf %d %lf %lf %d %d\n",
             &obs[i].lon, 
             &obs[i].lat,
             &obs[i].type, 
             &obs[i].value, 
             &obs[i].sigma,
-            &obs[i].month) != 6) {
+            &obs[i].month,
+            &obs[i].DENSITY_ICE) != 7) {
         fprintf(stderr, "error: failed to parse observation %d/%d\n", i, nobs);
         return -1;
         }
@@ -165,9 +167,12 @@ int gvcart_compute_prediction_(int * nmodels,
         return -1;
     }
     
+    double DENSITY_ICE = obs[*observation].DENSITY_ICE;
+
+    
     int month;
     double DENSITY_SNOW;
-    month = obs[10].month;
+    month = obs[*observation].month;
 
     DENSITY_SNOW  = 6.5*month + 274.51;
 
@@ -175,20 +180,16 @@ int gvcart_compute_prediction_(int * nmodels,
     switch (obs[ * observation].type) {
 
         case CS2_FREEBOARD_OBS: // CS2 Freeboard Observations, we have two models loaded, snow->value[0] and ice->value[1]
-            //prediction[0] = (DENSITY_WATER - DENSITY_ICE)/DENSITY_WATER * value[1] + (1  - SPEED_OF_LIGHT_VACUUM_OVER_SPEED_OF_LIGHT_SNOW - DENSITY_SNOW/DENSITY_WATER) * value[0];
-            prediction[0] = value[1] + (1  - SPEED_OF_LIGHT_VACUUM_OVER_SPEED_OF_LIGHT_SNOW*0.75 - DENSITY_SNOW/DENSITY_WATER) * value[0];
-            weight[0] = (1  - SPEED_OF_LIGHT_VACUUM_OVER_SPEED_OF_LIGHT_SNOW - DENSITY_SNOW/DENSITY_WATER);
-            weight[1] = 1;
-            //weight[1] = (DENSITY_WATER - DENSITY_ICE)/DENSITY_WATER;
+            prediction[0] = (DENSITY_WATER - DENSITY_ICE)/DENSITY_WATER * value[1] + (1  - SPEED_OF_LIGHT_VACUUM_OVER_SPEED_OF_LIGHT_SNOW*0.75 - DENSITY_SNOW/DENSITY_WATER) * value[0];
+            weight[0] = (1  - SPEED_OF_LIGHT_VACUUM_OVER_SPEED_OF_LIGHT_SNOW*0.75 - DENSITY_SNOW/DENSITY_WATER);
+            weight[1] = (DENSITY_WATER - DENSITY_ICE)/DENSITY_WATER;
 
             break;
 
         case AK_FREEBOARD_OBS: // AK Freeboard Observations, we have  two models loaded, snow->value[0] and ice->value[1]
-            //prediction[0] = (DENSITY_WATER - DENSITY_ICE)/DENSITY_WATER * value[1] + (1 - DENSITY_SNOW/DENSITY_WATER) * value[0];
-            prediction[0] = value[1] + (1 - DENSITY_SNOW/DENSITY_WATER) * value[0];
+            prediction[0] = (DENSITY_WATER - DENSITY_ICE)/DENSITY_WATER * value[1] + (1 - DENSITY_SNOW/DENSITY_WATER) * value[0];
             weight[0] = (1  -  DENSITY_SNOW/DENSITY_WATER);
-            weight[1] = 1;
-            //weight[1] = (DENSITY_WATER - DENSITY_ICE)/DENSITY_WATER;
+            weight[1] = (DENSITY_WATER - DENSITY_ICE)/DENSITY_WATER;
             break;
 
         default:
